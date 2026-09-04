@@ -6,7 +6,7 @@ import { ArrowRight, Radio, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
-  type ActivityItem, type Market, type Player, type Screen, type Session, type Snapshot, type TradeMessage,
+  type ActivityItem, type Market, type Payout, type Player, type Screen, type Session, type Snapshot, type TradeMessage,
   COLORS, STARTING_BALANCE, betCode, now, odds, uid,
 } from './types';
 import { Header } from './header';
@@ -41,10 +41,19 @@ export default function Home() {
   const marketRef = useRef<Market | null>(null);
   const playersRef = useRef<Player[]>([]);
   const activityRef = useRef<ActivityItem[]>([]);
+  const roleRef = useRef<'host' | 'guest'>('guest');
+  const socketIdRef = useRef<string | null>(null);
+  const usernameRef = useRef('');
 
   useEffect(() => { marketRef.current = market; }, [market]);
   useEffect(() => { playersRef.current = players; }, [players]);
   useEffect(() => { activityRef.current = activity; }, [activity]);
+  useEffect(() => {
+    if (session) {
+      roleRef.current = session.role;
+      usernameRef.current = session.username;
+    }
+  }, [session]);
 
   const broadcast = useCallback((nextMarket: Market, nextPlayers: Player[], nextActivity: ActivityItem[]) => {
     const payload: Snapshot = { type: 'snapshot', market: nextMarket, players: nextPlayers, activity: nextActivity };
@@ -122,21 +131,24 @@ export default function Home() {
     channelsRef.current.set(peerId, channel);
     channel.onopen = () => {
       setConnection('live');
-      if (session?.role === 'host' && marketRef.current) broadcast(marketRef.current, playersRef.current, activityRef.current);
+      if (roleRef.current === 'host' && marketRef.current) broadcast(marketRef.current, playersRef.current, activityRef.current);
     };
     channel.onmessage = (event) => {
       const message = JSON.parse(event.data) as Snapshot | TradeMessage;
-      if (message.type === 'snapshot' && session?.role === 'guest') {
+      if (message.type === 'snapshot' && roleRef.current === 'guest') {
         marketRef.current = message.market; playersRef.current = message.players; activityRef.current = message.activity;
         setMarket(message.market); setPlayers(message.players); setActivity(message.activity); setConnection('live');
       }
-      if (message.type === 'trade' && session?.role === 'host') executeTrade(message.name, message.outcomeId, message.amount);
+      if (message.type === 'trade' && roleRef.current === 'host') executeTrade(message.name, message.outcomeId, message.amount);
     };
-    channel.onclose = () => { channelsRef.current.delete(peerId); if (session?.role === 'guest') setConnection('offline'); };
-  }, [broadcast, executeTrade, session?.role]);
+    channel.onclose = () => { channelsRef.current.delete(peerId); if (roleRef.current === 'guest') setConnection('offline'); };
+  }, [broadcast, executeTrade]);
 
   useEffect(() => {
-    if (!session) return;
+    if (!session?.roomCode || !session.username) return;
+    const roomCode = session.roomCode;
+    const username = session.username;
+    const initialRole = roleRef.current;
     const socket = io(SIGNAL_URL, { transports: ['websocket', 'polling'] });
     socketRef.current = socket;
     const createPeer = (peerId: string, initiator: boolean) => {
@@ -150,12 +162,21 @@ export default function Home() {
       if (initiator) setupChannel(peerId, pc.createDataChannel('master-better'));
       return pc;
     };
+    const closePeer = (peerId: string) => {
+      const pc = peersRef.current.get(peerId);
+      if (pc) { pc.close(); peersRef.current.delete(peerId); }
+      channelsRef.current.get(peerId)?.close();
+      channelsRef.current.delete(peerId);
+      peerNamesRef.current.delete(peerId);
+    };
     socket.on('connect', () => {
+      socketIdRef.current = socket.id ?? null;
       setConnection('connecting');
-      if (session.role === 'host') socket.emit('create-room', { code: session.roomCode, name: session.username }, (reply: { ok: boolean; error?: string }) => {
+      // Only create/join with the role from when this socket effect mounted — role flips on handoff must not recreate the room.
+      if (initialRole === 'host') socket.emit('create-room', { code: roomCode, name: username }, (reply: { ok: boolean; error?: string }) => {
         if (!reply.ok) { setError(reply.error || 'That bet code is already being used.'); setSession(null); setScreen('host'); }
       });
-      else socket.emit('join-room', { code: session.roomCode, name: session.username }, (reply: { ok: boolean; error?: string }) => {
+      else socket.emit('join-room', { code: roomCode, name: username }, (reply: { ok: boolean; error?: string }) => {
         if (!reply.ok) { setError(reply.error || 'Could not join that bet.'); setSession(null); setScreen('join'); }
       });
     });
@@ -178,12 +199,56 @@ export default function Home() {
         }
       } else if (data.candidate) await pc.addIceCandidate(data.candidate);
     });
+    socket.on('host-transferred', async ({ newHostId, previousHostId, members }: { newHostId: string; previousHostId: string; members: string[] }) => {
+      peersRef.current.forEach((pc) => pc.close());
+      peersRef.current.clear();
+      channelsRef.current.forEach((ch) => { try { ch.close(); } catch { /* ignore */ } });
+      channelsRef.current.clear();
+
+      const prevName = peerNamesRef.current.get(previousHostId);
+      peerNamesRef.current.delete(previousHostId);
+      const selfId = socket.id || socketIdRef.current;
+      const amNewHost = selfId === newHostId;
+      const myName = usernameRef.current || username;
+
+      let nextPlayers = [...playersRef.current];
+      if (prevName) nextPlayers = nextPlayers.filter((p) => p.name !== prevName);
+      else nextPlayers = nextPlayers.filter((p) => !p.host);
+      nextPlayers = nextPlayers.map((p) => ({ ...p, host: amNewHost && p.name === myName }));
+      playersRef.current = nextPlayers;
+      setPlayers(nextPlayers);
+
+      const nextActivity = [{ id: uid(), text: amNewHost ? 'You are now the host' : 'Host transferred to another player', time: now() }, ...activityRef.current].slice(0, 8);
+      activityRef.current = nextActivity;
+      setActivity(nextActivity);
+      setConnection('connecting');
+
+      if (amNewHost) {
+        roleRef.current = 'host';
+        setSession((s) => s ? { ...s, role: 'host' } : s);
+        for (const memberId of members) {
+          if (memberId === selfId) continue;
+          const pc = createPeer(memberId, true);
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          socket.emit('signal', { target: memberId, data: { description: pc.localDescription } });
+        }
+      } else {
+        roleRef.current = 'guest';
+        setSession((s) => s ? { ...s, role: 'guest' } : s);
+      }
+    });
+    socket.on('peer-left', ({ peerId }: { peerId: string }) => {
+      closePeer(peerId);
+    });
     socket.on('room-closed', () => { setConnection('offline'); setError('The host closed this bet.'); });
     socket.on('connect_error', () => setConnection('offline'));
     return () => {
-      peersRef.current.forEach((pc) => pc.close()); peersRef.current.clear(); channelsRef.current.clear(); socket.disconnect();
+      peersRef.current.forEach((pc) => pc.close()); peersRef.current.clear(); channelsRef.current.clear();
+      socketIdRef.current = null; socket.disconnect();
     };
-  }, [session, setupChannel]);
+  // Intentionally omit session.role — handoff updates role without remounting the socket.
+  }, [session?.roomCode, session?.username, setupChannel]);
 
   const startHosting = (event: FormEvent) => {
     event.preventDefault(); setError('');
@@ -200,13 +265,13 @@ export default function Home() {
     const initialActivity = [{ id: uid(), text: `${username.trim()} opened the market`, time: now() }];
     marketRef.current = initialMarket; playersRef.current = initialPlayers; activityRef.current = initialActivity;
     setMarket(initialMarket); setPlayers(initialPlayers); setActivity(initialActivity);
-    setSelected(outcomes[0].id); setSession({ role: 'host', roomCode: normalizedCode || betCode(), username: username.trim() }); setScreen('room');
+    setSelected(outcomes[0].id); roleRef.current = 'host'; usernameRef.current = username.trim(); setSession({ role: 'host', roomCode: normalizedCode || betCode(), username: username.trim() }); setScreen('room');
   };
 
   const joinRoom = (event: FormEvent) => {
     event.preventDefault(); setError('');
     if (!username.trim() || joinCode.trim().length < 4) { setError('Enter your name and a valid bet code.'); return; }
-    setSession({ role: 'guest', roomCode: joinCode.trim().toUpperCase(), username: username.trim() }); setMarket(null); setScreen('room');
+    roleRef.current = 'guest'; usernameRef.current = username.trim(); setSession({ role: 'guest', roomCode: joinCode.trim().toUpperCase(), username: username.trim() }); setMarket(null); setScreen('room');
   };
 
   const placeTrade = () => {
