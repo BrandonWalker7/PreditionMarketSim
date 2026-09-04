@@ -1,0 +1,67 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background); --color-foreground: var(--foreground);
+  --color-card: var(--card); --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover); --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary); --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary); --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted); --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent); --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive); --color-border: var(--border); --color-input: var(--input); --color-ring: var(--ring);
+  --font-sans: var(--font-geist-sans); --font-mono: var(--font-geist-mono); --font-heading: var(--font-geist-sans);
+  --radius-sm: .5rem; --radius-md: .75rem; --radius-lg: 1rem; --radius-xl: 1.35rem; --radius-2xl: 1.75rem;
+}
+
+:root {
+  --background: #080a09; --foreground: #f3f7f5; --card: #101311; --card-foreground: #f3f7f5;
+  --popover: #131715; --popover-foreground: #f3f7f5; --primary: #28d17c; --primary-foreground: #03150c;
+  --secondary: #1a1e1c; --secondary-foreground: #e7edea; --muted: #171b19; --muted-foreground: #89938e;
+  --accent: #113322; --accent-foreground: #75efa9; --destructive: #f05252; --border: #252b28; --input: #313834; --ring: #28d17c;
+}
+
+.dark {
+  --background: #101817; --foreground: #edf3ef; --card: #17211f; --card-foreground: #edf3ef;
+  --popover: #17211f; --popover-foreground: #edf3ef; --primary: #5fd0ae; --primary-foreground: #0c2821;
+  --secondary: #23302d; --secondary-foreground: #e9f1ed; --muted: #202c29; --muted-foreground: #9dacaa;
+  --accent: #1f3d36; --accent-foreground: #a4e6d1; --destructive: #e06b6b; --border: #2d3b38; --input: #34433f; --ring: #5fd0ae;
+}
+
+@layer base {
+  * { @apply border-border outline-ring/50; }
+  html { @apply font-sans; }
+  body { @apply bg-background text-foreground; }
+}
+
+body { min-width: 320px; background-image: radial-gradient(circle at 8% 0%, rgba(40,209,124,.08), transparent 28%), radial-gradient(circle at 92% 8%, rgba(240,82,82,.05), transparent 24%); }
+button, a, input { -webkit-tap-highlight-color: transparent; }
+
+@keyframes winner-in {
+  0% { opacity: 0; transform: translateY(-24px) scale(.97); }
+  70% { transform: translateY(3px) scale(1.01); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes trophy-pop {
+  0% { transform: scale(.35) rotate(-18deg); opacity: 0; }
+  65% { transform: scale(1.15) rotate(5deg); }
+  100% { transform: scale(1) rotate(0); opacity: 1; }
+}
+
+@keyframes confetti-fall {
+  0% { opacity: 0; transform: translateY(-28px) rotate(0deg); }
+  20% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(76px) rotate(260deg); }
+}
+
+.winner-banner { animation: winner-in .7s cubic-bezier(.2,.8,.2,1) both; }
+.winner-trophy { animation: trophy-pop .85s .15s cubic-bezier(.2,.9,.25,1.3) both; }
+.winner-particle { animation: confetti-fall 1.9s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .winner-banner, .winner-trophy, .winner-particle { animation: none; }
+}

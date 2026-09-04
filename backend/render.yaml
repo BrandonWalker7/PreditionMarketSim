@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: master-better-signaling
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run backend:build
+    startCommand: npm run backend:start
+    healthCheckPath: /
+    envVars:
+      - key: FRONTEND_ORIGIN
+        sync: false
