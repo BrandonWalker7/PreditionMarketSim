@@ -7,5 +7,22 @@ services:
     startCommand: npm run backend:start
     healthCheckPath: /
     envVars:
+      - key: NODE_VERSION
+        value: "22.13.0"
       - key: FRONTEND_ORIGIN
         sync: false
+  - type: web
+    name: master-better-web
+    runtime: static
+    plan: free
+    buildCommand: npm install && NEXT_PUBLIC_SIGNALING_URL=https://preditionmarketsim.onrender.com npm run build:static
+    staticPublishPath: dist-static
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: NODE_VERSION
+        value: "22.13.0"
+      - key: NEXT_PUBLIC_SIGNALING_URL
+        value: https://preditionmarketsim.onrender.com
