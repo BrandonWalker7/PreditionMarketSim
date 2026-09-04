@@ -26,7 +26,7 @@ export class SignalingGateway implements OnGatewayDisconnect {
   joinRoom(@ConnectedSocket() client: Socket, @MessageBody() body: { code: string; name: string }) {
     const code = body.code.trim().toUpperCase();
     const room = this.rooms.get(code);
-    if (!room) return { ok: false, error: 'That bet does not exist or its host is offline.' };
+    if (!room) return { ok: false, error: 'That bet does not exist or is no longer available.' };
     room.members.add(client.id);
     this.socketRooms.set(client.id, code);
     client.join(code);
@@ -50,10 +50,22 @@ export class SignalingGateway implements OnGatewayDisconnect {
     this.socketRooms.delete(client.id);
     if (!room) return;
     room.members.delete(client.id);
+
     if (room.hostId === client.id) {
-      this.server.to(code).emit('room-closed');
-      room.members.forEach((id) => this.socketRooms.delete(id));
-      this.rooms.delete(code);
+      if (room.members.size > 0) {
+        const previousHostId = client.id;
+        const successor = room.members.values().next().value as string;
+        room.hostId = successor;
+        this.server.to(code).emit('host-transferred', {
+          newHostId: successor,
+          previousHostId,
+          members: [...room.members],
+        });
+      } else {
+        this.rooms.delete(code);
+      }
+    } else {
+      this.server.to(code).emit('peer-left', { peerId: client.id });
     }
   }
 }
