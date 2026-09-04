@@ -2,12 +2,22 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/postcss";
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 
+/** Strip crossorigin from built index.html so Safari applies CSS without CORS. */
+function stripCrossorigin(): Plugin {
+  return {
+    name: "strip-crossorigin",
+    transformIndexHtml(html) {
+      return html.replace(/\s+crossorigin(?:="[^"]*")?/g, "");
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), stripCrossorigin()],
   resolve: {
     alias: {
       "@": rootDir,
