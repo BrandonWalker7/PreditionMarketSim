@@ -1,47 +1,20 @@
 'use client';
 
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
-import {
-  Activity, ArrowLeft, ArrowRight, Check, CircleDollarSign,
-  Clock, Copy, Crown, LockKeyhole, LogOut, PartyPopper, Plus, Radio,
-  TrendingUp, Trophy, Users, X,
-} from 'lucide-react';
-import { Area, AreaChart, CartesianGrid, Tooltip, XAxis, YAxis } from 'recharts';
+import { ArrowRight, Radio, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { ChartContainer, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import {
+  type ActivityItem, type Market, type Player, type Screen, type Session, type Snapshot, type TradeMessage,
+  COLORS, STARTING_BALANCE, betCode, now, odds, uid,
+} from './types';
+import { Header } from './header';
+import { HostForm } from './host-form';
+import { JoinForm } from './join-form';
+import { BetView } from './bet-view';
 
-type Screen = 'home' | 'host' | 'join' | 'room';
-type Outcome = { id: string; label: string; pool: number; color: string };
-type Payout = { name: string; stake: number; share: number; payout: number; profit: number };
-type Market = {
-  title: string;
-  outcomes: Outcome[];
-  history: Array<Record<string, number | string>>;
-  closesAt: string;
-  status: 'open' | 'closed' | 'resolved';
-  winnerId?: string;
-  payouts?: Payout[];
-};
-type Player = { name: string; balance: number; holdings: Record<string, number>; stakes: Record<string, number>; host?: boolean };
-type ActivityItem = { id: string; text: string; time: string };
-type Snapshot = { type: 'snapshot'; market: Market; players: Player[]; activity: ActivityItem[] };
-type TradeMessage = { type: 'trade'; outcomeId: string; amount: number; name: string };
-type Session = { role: 'host' | 'guest'; roomCode: string; username: string };
-
-const COLORS = ['#28d17c', '#f05252', '#43a6f0', '#f1b94e', '#a77bf3', '#32c7c4'];
-const STARTING_BALANCE = 100000;
 const SIGNAL_URL = process.env.NEXT_PUBLIC_SIGNALING_URL || 'http://localhost:3001';
-
-function uid() { return Math.random().toString(36).slice(2, 10); }
-function betCode() { return Math.random().toString(36).slice(2, 8).toUpperCase(); }
-function odds(outcomes: Outcome[], id: string) {
-  const total = outcomes.reduce((sum, item) => sum + item.pool, 0);
-  return total ? Math.round((outcomes.find((item) => item.id === id)?.pool || 0) / total * 100) : 0;
-}
-function now() { return new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); }
 
 export default function Home() {
   const [screen, setScreen] = useState<Screen>('home');
